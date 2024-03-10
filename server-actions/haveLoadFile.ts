@@ -6,25 +6,22 @@ import ROUTERS from '@/app/constans'
 import type {ErrorState} from "@/server-actions/types";
 
 
+
 export default async function haveLoadFile(prevState:ErrorState,formData:FormData){
     let yDisk = new YandexDiskApi(process.env.yndexOauth)
     // @ts-ignore: Type error.
-    let file:File = formData.get('file1')
-    console.log(file.name)
-
-    return await yDisk.getLoadingLink(file.name)
+    let file = formData.get('file')
+    let nameFile = formData.get('nameFile')
+    return await yDisk.getLoadingLink(nameFile )
         .then(async (link)=>{
-
-         if(link){
-           return  await  yDisk.loadToDisk(link.href,formData)
+         if(link?.href){
+           return  await  yDisk.loadToDisk(link.href,file)
                  .then((statusResponse)=>{
                      if(statusResponse){
                          revalidatePath(ROUTERS.appFolder)
                          return {description: '', error: '',status:statusResponse.status}
                      }
-
                  }).catch((error:YDiskError)=>{
-
                    return error
                })
          }

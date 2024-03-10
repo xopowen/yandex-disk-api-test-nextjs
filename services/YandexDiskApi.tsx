@@ -3,7 +3,7 @@
 import {
     AppInfo,
     CustomError, LinkDownLoadDisk,
-    LinkLoadDisk,
+    LinkLoadDisk, Resource,
     ResourceFile,
     ResourceFolder, ResourceLink,
     trackerStatus,
@@ -164,10 +164,10 @@ interface interfaceDisk{
     /*+*/statusAsyncOperation(idOperation):Promise<undefined | {status:string,statusCode:number}>
     infoFile(path:string,options: any ):Promise<ResourceFile|undefined>
     infoFolder(path:string,options: any ):Promise<ResourceFolder|undefined>
-    listAllFile():Promise<ResourceFile|undefined>
+    /*+*/listAllFile(options:{ limit?:number, media_type?:string, offset?:number, fields?:any, preview_size?:number, preview_crop?:string }):Promise<{items:Array<ResourceFile>|undefined}>
     getDownloadFileLink(path:string):Promise<LinkDownLoadDisk|undefined>
     addMetaInfo():Promise<any>
-    /*+*/loadToDisk(loadingLing:string,formData :FormData):Promise<{status:number}|undefined>
+    /*+*/loadToDisk(loadingLing:string,file :File):Promise<{status:number}|undefined>
     /*+*/copyResource(from:string,to:string,options:{overwrite?:boolean}):Promise<trackerStatus|ResourceLink|undefined>
     /*+*/moveResource(from:string,to:string,options:{overwrite?:boolean}):Promise<trackerStatus|ResourceLink|undefined>
     /*+*/delFileOrFolder(path:string,options:{permanently?:boolean}):Promise<trackerStatus|{status:number}|undefined>
@@ -184,14 +184,58 @@ export default class YandexDiskApi implements interfaceDisk {
 
     _fieldFolder = JSON.stringify('name,_embedded,_embedded.items.path,_embedded.items.type,created,custom_properties,public_url,origin_path,modified,path,md5,type,mime_type,size')
 
-
     publication(){}
     listPublicated(){}
 
     /**
      * @description
-     * Статус операции. Возможные значения:
+     * media_type - Тип файлов, которые нужно включить в список. Чтобы запросить несколько типов файлов, можно перечислить их в значении параметра через запятую.
+     *@description
+     * offset - Количество ресурсов с начала списка, которые следует опустить в ответе
+     * @description
+     * fields - Список свойств JSON, которые следует включить в ответ. пример name,_embedded.items.path
+     * @description
+     * preview_size - Требуемый размер уменьшенного изображения.
+     * @description
+     * preview_crop - Параметр позволяет обрезать превью согласно размеру, заданному в значении параметра preview_size.
      *
+     * @param {
+     * {
+     *         limit?:number,
+     *         media_type?:string,
+     *         offset?:number,
+     *         fields?:any,
+     *         preview_size?:number,
+     *         preview_crop?:string
+     *         }
+     *         } options
+     */
+    async listAllFile(options:{
+        limit?:number,
+        media_type?:string,
+        offset?:number,
+        fields?:any,
+        preview_size?:number,
+        preview_crop?:string
+    }={limit:20}):Promise<{items:Array<ResourceFile>}|undefined>{
+        let urlParams = new URLSearchParams()
+        Object.entries(options).map((item)=>{
+            urlParams.append(item[0],item[1])
+        })
+        return this._fetch(API_LINKS.listAllFile+'?'+urlParams.toString())
+            .then(async (response)=>{
+                if(response){
+                    return await response.json().then((data)=>{
+                        return data
+                    })
+                }
+                return
+            })
+    }
+
+    /**
+     * @description
+     * Статус операции. Возможные значения:
      * success — операция успешно завершена.
      * @description
      * failed — операцию совершить не удалось, попробуйте повторить изначальный запрос копирования, перемещения или удаления.
@@ -380,7 +424,6 @@ export default class YandexDiskApi implements interfaceDisk {
         let url = new URLSearchParams()
         url.append('path','app:/'+path)
         url.append('overwrite','false')
-        // url.append('fields',this._fieldFolder)
         return  this._fetch('disk/resources/upload'+
             `?${url.toString()}`
         ).then(async (response)=>{
@@ -394,7 +437,7 @@ export default class YandexDiskApi implements interfaceDisk {
     }
     /**
      * @param {string} loadingLing ссылка полученная @see getLoadingLink
-     * @param {FormData} formData
+     * @param {File} file
      * @description
      * list status.
      * 202 Accepted — файл принят сервером, но еще не был перенесен непосредственно в Яндекс Диск.
@@ -407,8 +450,13 @@ export default class YandexDiskApi implements interfaceDisk {
      *
      * 507 Insufficient Storage — для загрузки файла не хватает места на Диске пользователя.
      */
-    async loadToDisk(loadingLing:string,formData :FormData):Promise<{status:number}|undefined>{
-        return fetch(loadingLing,{method:'PUT', body:JSON.stringify(FormData)})
+    async loadToDisk(loadingLing:string,file :File):Promise<{status:number}|undefined>{
+
+        return fetch(loadingLing,{
+            method:'PUT',
+            body:await file.arrayBuffer(),
+            headers:{"Content-Type":"application/x-www-form-urlencoded"}
+        })
             .then( async (respnse)=>{
             if(respnse.ok){
                 return {status:respnse.status}
@@ -445,7 +493,7 @@ export default class YandexDiskApi implements interfaceDisk {
         urlParams.append('path',path)
         return this._fetch('disk/resources/download?'+ urlParams.toString())
             .then(async (response)=>{
-                if(response?.ok){
+                if(response){
                    return await response.json().then((data:LinkDownLoadDisk)=>{
                         return data
                     })

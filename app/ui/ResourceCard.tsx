@@ -10,6 +10,7 @@ export type ResourceCard = {
 import { Spin } from 'antd';
 import CopyResource from "@/app/ui/CardButtons/CopyResource";
 import MoveRecource from "@/app/ui/CardButtons/MoveRecource";
+import DownloadFile from "@/app/ui/CardButtons/DownloadFile";
 
 
 export default function ResourceCard({path,type,allInfo}:ResourceCard|{allInfo:Array<ResourceCard>}){
@@ -23,10 +24,11 @@ export default function ResourceCard({path,type,allInfo}:ResourceCard|{allInfo:A
     return<div>
         <p>{path}</p>
         <Flex gap={"middle"} align={'center'} justify={'center'}>
+            {type !=='dir' &&  <DownloadFile path={path} />}
             <Button type={"primary"} onClick={()=>{delResource(path) }}>
                 del
             </Button>
-        <CopyResource path={path} type={type} allInfo = {allInfo} />
+            <CopyResource path={path} type={type} allInfo = {allInfo} />
             <MoveRecource path={path} type={type} allInfo = {allInfo}/>
         </Flex>
     </div>
