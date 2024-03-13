@@ -22,7 +22,7 @@ const API_LINKS =  {
      * get - get meta info
      * PATCH - add meta info
      */
-    metaResource : 'disk/resources',
+    infoMetaResource : 'disk/resources',
     /**
      * get
      */
@@ -59,6 +59,7 @@ const API_LINKS =  {
      * put
      */
     publicationResource : 'disk/resources/publish',
+    unPublicationResource:'disk/resources/unpublish',
     /**
      * get
      */
@@ -162,11 +163,12 @@ export async function getOAuthKeys(authorization_code:string,client_id:string):P
 interface interfaceDisk{
     /*+*/infoDisk():Promise<any>
     /*+*/statusAsyncOperation(idOperation):Promise<undefined | {status:string,statusCode:number}>
-    infoFile(path:string,options: any ):Promise<ResourceFile|undefined>
-    infoFolder(path:string,options: any ):Promise<ResourceFolder|undefined>
-    /*+*/listAllFile(options:{ limit?:number, media_type?:string, offset?:number, fields?:any, preview_size?:number, preview_crop?:string }):Promise<{items:Array<ResourceFile>|undefined}>
-    getDownloadFileLink(path:string):Promise<LinkDownLoadDisk|undefined>
-    addMetaInfo():Promise<any>
+    /*+*/infoFile(path:string, options:{limit:number, sort: string} ):Promise<ResourceFile|undefined>
+    /*+*/infoResource(path:string,options:{limit:number, sort: string}):Promise<ResourceFile|ResourceFolder|undefined>
+    /*+*/infoFolder(path:string,options: {limit:number, sort: string} ):Promise<ResourceFolder|undefined>
+    /*+*/listAllFile(options:{ limit?:number, media_type?:string, offset?:number, fields?:any, preview_size?:number, preview_crop?:string }):Promise<{items:Array<ResourceFile>}|undefined>
+    /*+*/getDownloadFileLink(path:string):Promise<LinkDownLoadDisk|undefined>
+    /*+*/addMetaInfo(path:string,metaInfo:{[key:string]:string}):Promise<Resource|undefined>
     /*+*/loadToDisk(loadingLing:string,file :File):Promise<{status:number}|undefined>
     /*+*/copyResource(from:string,to:string,options:{overwrite?:boolean}):Promise<trackerStatus|ResourceLink|undefined>
     /*+*/moveResource(from:string,to:string,options:{overwrite?:boolean}):Promise<trackerStatus|ResourceLink|undefined>
@@ -178,14 +180,108 @@ interface interfaceDisk{
 
 export default class YandexDiskApi implements interfaceDisk {
     private static singleton: YandexDiskApi | null;
-
     protected HOST = 'cloud-api.yandex.net'
     protected versionApi = 'v1'
 
     _fieldFolder = JSON.stringify('name,_embedded,_embedded.items.path,_embedded.items.type,created,custom_properties,public_url,origin_path,modified,path,md5,type,mime_type,size')
 
-    publication(){}
-    listPublicated(){}
+    async toPublicationResource(path):Promise<ResourceLink|undefined>{
+        let searchParams = new URLSearchParams()
+        searchParams.append('path',path)
+
+        return this._fetch(API_LINKS.publicationResource+'?'+searchParams.toString(),'PUT')
+            .then(async (response)=>{
+            if(response){
+                return await response.json()
+                    .then((data:ResourceLink)=>{
+                        data.status = response.status
+                        return data
+                    })
+            }
+        })
+    }
+    async unPublicationResource(path):Promise<ResourceLink|undefined>{
+        let searchParams = new URLSearchParams()
+        searchParams.append('path',path)
+        return this._fetch(API_LINKS.unPublicationResource+'?'+searchParams.toString(),'PUT')
+            .then(async (response)=>{
+            if(response){
+                return await response.json()
+                    .then((data:ResourceLink)=>{
+                        data.status = response.status
+                        return data
+                    })
+            }
+        })
+    }
+
+
+    /**
+     *todo test
+     *@param {{
+     * limit?:number,
+     * offset?:number,
+     * type?:['dir','file']
+     * }} options  -
+     *@description limit=<количество файлов в списке>
+     *@description offset=<смещение относительно начала списка>
+     *@description type=<тип запрашиваемых файлов>
+     *@description fields=<свойства, которые нужно включить в ответ>
+     *@description preview_size=<размер превью>]
+     */
+    async listPublicated(options:{}={}):Promise<{items:Array<ResourceFile>}|undefined>{
+        return this._fetch(API_LINKS.listPublicationResource)
+            .then(async (response)=>{
+                if(response){
+                    return await response.json().then((data:{items:Array<ResourceFile>})=>{
+                        return data
+                    })
+                }
+                return
+        })
+    }
+    async infoPublicatedResource():Promise<Resource|undefined>{
+        return this._fetch(API_LINKS.publishedMetaInfo).then(async (response)=>{
+            if(response){
+                return await response.json().then((data:Resource)=>{
+                    return data
+                })
+            }
+            return
+        })
+    }
+    /**
+     * @todo возвращает не все поля указанные в this._fieldFolder
+     * @description добавление metaInfo к Resource .
+     * @description доступны через Resource.custom_properties.
+     * @description max-size 1024 char
+     * @param {string} path
+     * @param {{[key:string]:string}} metaInfo
+     */
+    async addMetaInfo(path:string,metaInfo:{[key:string]:string}):Promise<Resource|undefined>{
+        let searchParams = new URLSearchParams()
+        searchParams.append('path',path)
+        // searchParams.append('fields',this._fieldFolder)
+        return  fetch(`https:${this.HOST}/${(this.versionApi)}/${API_LINKS.infoMetaResource}`+'?' + searchParams.toString()
+            ,{
+                method:"PATCH",
+                body:JSON.stringify(
+                    {
+                        "custom_properties": metaInfo
+                    }
+                ),
+                headers:{Authorization:` OAuth ${this._OAuthKey}`,'Content-Type':'application/json'}
+        }).then(async (response:Response)=>{
+            if(response.ok){
+                return await response.json().then((data:Resource)=>{
+                    return data
+                })
+            }
+            await response.json().then((data:YDiskError)=>{
+                return Promise.reject(data)
+            })
+        })
+    }
 
     /**
      * @description
@@ -320,13 +416,13 @@ export default class YandexDiskApi implements interfaceDisk {
      * @return Promise<ResourceFile|ResourceFolder|undefined>
      *
      */
-    async _infoFileFolder(path:string,options={limit:20, sort: 'name'}):Promise<ResourceFile|ResourceFolder|undefined>{
+    async infoResource(path:string,options={limit:20, sort: 'name'}):Promise<ResourceFile|ResourceFolder|undefined>{
         let urlParams = new URLSearchParams()
+        urlParams.append('path',path)
         urlParams.append('limit',options.limit.toString())
         urlParams.append('sort',options.sort)
-        urlParams.append('fields',this._fieldFolder)
-        return   this._fetch(`disk/resources?path=app:/${path}&`+
-            urlParams.toString())
+        // urlParams.append('fields',this._fieldFolder)
+        return   this._fetch(API_LINKS.infoMetaResource+'?'+ urlParams.toString())
            .then(async (response:Response|undefined)=>{
             if(response){
               return  await response.json()
@@ -346,7 +442,7 @@ export default class YandexDiskApi implements interfaceDisk {
      * @return Promise<ResourceFile|undefined>
      */
     async infoFile(path:string,options={limit:20, sort: 'name'}):Promise<ResourceFile|undefined>{
-       return  this._infoFileFolder(path ,options)
+       return  this.infoResource(path ,options)
            .then(async (resource)=>{
             if(resource && resource.type ==='file'){
                 return resource
@@ -359,7 +455,6 @@ export default class YandexDiskApi implements interfaceDisk {
                     }
                 })
             }
-
            return
         })
 
@@ -372,7 +467,7 @@ export default class YandexDiskApi implements interfaceDisk {
     async infoAppFolder():Promise<ResourceFolder|undefined>{
         let urlParams = new URLSearchParams()
         urlParams.append('path','app:/')
-        urlParams.append('fields',this._fieldFolder)
+        // urlParams.append('fields',this._fieldFolder)
        return  this._fetch(`disk/resources?`+urlParams.toString())
            .then(async (response:Response|undefined)=>{
            if(response?.ok){
@@ -392,7 +487,7 @@ export default class YandexDiskApi implements interfaceDisk {
      * @return Promise<ResourceFolder|undefined>
      */
     async infoFolder(path:string,options={limit:20, sort: 'name'}):Promise<ResourceFolder|undefined>{
-        return this._infoFileFolder(path ,options).then(async (resource)=>{
+        return this.infoResource(path ,options).then(async (resource)=>{
             if(resource && resource.type === 'dir'){
                 return resource
             }
@@ -502,7 +597,6 @@ export default class YandexDiskApi implements interfaceDisk {
             })
     }
 
-
     async _operationOnFileOrFolder(operationURL:string,method:string,from:string,to:string,options:{overwrite?:boolean}):Promise<trackerStatus|ResourceLink|undefined>{
         let urlParams = new URLSearchParams()
         urlParams.append('from',from)
@@ -554,8 +648,6 @@ export default class YandexDiskApi implements interfaceDisk {
     async moveResource(from:string,to:string,options:{overwrite?:boolean}= {overwrite:false}):Promise<trackerStatus|ResourceLink|undefined>{
         return this._operationOnFileOrFolder(API_LINKS.move,'POST',from,to,options)
     }
-
-
     /**
      *
      * @param {string } path Путь к удаляемому ресурсу.
@@ -587,8 +679,6 @@ export default class YandexDiskApi implements interfaceDisk {
                 return undefined
             })
     }
-
-
     /**
      * @description создаёт папку в папке приложения
      * @param {string} path Путь к создаваемой папке.
@@ -607,8 +697,5 @@ export default class YandexDiskApi implements interfaceDisk {
                 return undefined
             })
     }
-
-
-
 
 }

@@ -22,11 +22,11 @@ export default async function Page(){
     }
 
     return <div>
-        <code className="p-24">{JSON.stringify(info)}</code>
+        {/*<code className="p-24">{JSON.stringify(info)}</code>*/}
         <div style={{marginBlock:"10px"}}>
             {info && info._embedded?.items && info._embedded.items.map((item,index)=>{
                 return <ResourceCard key={item.path} path={item.path} type={item.type} allInfo = {info._embedded.items}/>
-            })}
+            })                                           }
         </div>
 
 
